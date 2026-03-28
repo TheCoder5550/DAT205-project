@@ -6,5 +6,15 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig(
   eslint.configs.recommended,
-  tseslint.configs.recommended,
+  tseslint.configs.recommendedTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-unused-vars": "warn",
+    }
+  },
 );
