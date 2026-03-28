@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "allowJs": true,
+
     "target": "ES2023",
     "useDefineForClassFields": true,
     "module": "ESNext",
@@ -23,5 +25,5 @@
     "noUncheckedSideEffectImports": true,
     "strictPropertyInitialization": true
   },
-  "include": ["src"]
+  "include": ["src", "vite.config.ts", "eslint.config.mjs"]
 }
