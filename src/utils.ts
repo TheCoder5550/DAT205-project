@@ -1,3 +1,7 @@
+export function degToRad(deg: number): number {
+  return deg * Math.PI / 180;
+}
+
 export function createCircleVertices({
   radius = 1,
   numSubdivisions = 24,
@@ -71,5 +75,61 @@ export function createCircleVertices({
     vertexData,
     indexData,
     numVertices: indexData.length,
+  };
+}
+
+export function getCubeMeshData() {
+  const vertices = new Float32Array([
+    1.0, 1.0, 1.0,  -1.0, 1.0, 1.0,  -1.0,-1.0, 1.0,   1.0,-1.0, 1.0, // front
+    1.0, 1.0, 1.0,   1.0,-1.0, 1.0,   1.0,-1.0,-1.0,   1.0, 1.0,-1.0, // right
+    1.0, 1.0, 1.0,   1.0, 1.0,-1.0,  -1.0, 1.0,-1.0,  -1.0, 1.0, 1.0, // up
+    -1.0, 1.0, 1.0,  -1.0, 1.0,-1.0,  -1.0,-1.0,-1.0,  -1.0,-1.0, 1.0, // left
+    -1.0,-1.0,-1.0,   1.0,-1.0,-1.0,   1.0,-1.0, 1.0,  -1.0,-1.0, 1.0, // down
+    1.0,-1.0,-1.0,  -1.0,-1.0,-1.0,  -1.0, 1.0,-1.0,   1.0, 1.0,-1.0  // back
+  ]);
+
+  const normals = new Float32Array([
+    0.0, 0.0, 1.0,   0.0, 0.0, 1.0,   0.0, 0.0, 1.0,   0.0, 0.0, 1.0,  // front
+    1.0, 0.0, 0.0,   1.0, 0.0, 0.0,   1.0, 0.0, 0.0,   1.0, 0.0, 0.0,  // right
+    0.0, 1.0, 0.0,   0.0, 1.0, 0.0,   0.0, 1.0, 0.0,   0.0, 1.0, 0.0,  // up
+    -1.0, 0.0, 0.0,  -1.0, 0.0, 0.0,  -1.0, 0.0, 0.0,  -1.0, 0.0, 0.0,  // left
+    0.0,-1.0, 0.0,   0.0,-1.0, 0.0,   0.0,-1.0, 0.0,   0.0,-1.0, 0.0,  // down
+    0.0, 0.0,-1.0,   0.0, 0.0,-1.0,   0.0, 0.0,-1.0,   0.0, 0.0,-1.0   // back
+  ]);
+
+  const indices = new Uint32Array([
+    0, 1, 2,   0, 2, 3,  // front
+    4, 5, 6,   4, 6, 7,  // right
+    8, 9, 10,  8, 10,11, // up
+    12,13,14,  12,14,15, // left
+    16,17,18,  16,18,19, // down
+    20,21,22,  20,22,23  // back
+  ]);
+
+  const uvs = new Float32Array([
+    1.0, 1.0,  0.0, 1.0,  0.0, 0.0,  1.0, 0.0,
+    1.0, 1.0,  0.0, 1.0,  0.0, 0.0,  1.0, 0.0,
+    1.0, 1.0,  0.0, 1.0,  0.0, 0.0,  1.0, 0.0,
+    1.0, 1.0,  0.0, 1.0,  0.0, 0.0,  1.0, 0.0,
+    1.0, 1.0,  0.0, 1.0,  0.0, 0.0,  1.0, 0.0,
+    1.0, 1.0,  0.0, 1.0,  0.0, 0.0,  1.0, 0.0
+  ]);
+
+  return {
+    indices: {
+      bufferData: indices,
+    },
+    position: {
+      bufferData: vertices,
+      size: 3
+    },
+    normal: {
+      bufferData: normals,
+      size: 3
+    },
+    uv: {
+      bufferData: uvs,
+      size: 2
+    }
   };
 }
