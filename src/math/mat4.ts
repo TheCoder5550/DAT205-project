@@ -1,4 +1,7 @@
+import Quat from "./quat";
+
 const TEMP_MATRIX = new Float32Array(16);
+const TEMP_QUAT = new Quat();
 
 export default class Mat4 {
   static identity(dst?: Float32Array) {
@@ -10,6 +13,33 @@ export default class Mat4 {
       0, 0, 0, 1
     );
     return dst;
+  }
+
+  static copy(m: Float32Array, dst?: Float32Array) {
+    dst = dst || new Float32Array(16);
+    dst.set(m);
+    return dst;
+  }
+
+  static equal(a: Float32Array, b: Float32Array, epsilon = 1e-6) {
+    return (
+      Math.abs(a[0] - b[0]) < epsilon &&
+      Math.abs(a[1] - b[1]) < epsilon &&
+      Math.abs(a[2] - b[2]) < epsilon &&
+      Math.abs(a[3] - b[3]) < epsilon &&
+      Math.abs(a[4] - b[4]) < epsilon &&
+      Math.abs(a[5] - b[5]) < epsilon &&
+      Math.abs(a[6] - b[6]) < epsilon &&
+      Math.abs(a[7] - b[7]) < epsilon &&
+      Math.abs(a[8] - b[8]) < epsilon &&
+      Math.abs(a[9] - b[9]) < epsilon &&
+      Math.abs(a[10] - b[10]) < epsilon &&
+      Math.abs(a[11] - b[11]) < epsilon &&
+      Math.abs(a[12] - b[12]) < epsilon &&
+      Math.abs(a[13] - b[13]) < epsilon &&
+      Math.abs(a[14] - b[14]) < epsilon &&
+      Math.abs(a[15] - b[15]) < epsilon
+    );
   }
 
   static multiply(a: Float32Array, b: Float32Array, dst?: Float32Array) {
@@ -226,7 +256,7 @@ export default class Mat4 {
     return dst;
   }
 
-  static perspective(options: {
+  static perspective(options?: {
     fov?: number;
     aspect?: number;
     near?: number;
@@ -234,10 +264,10 @@ export default class Mat4 {
   }, dst?: Float32Array) {
     dst = dst || new Float32Array(16);
 
-    const fovy = options.fov || 1.5;
-    const aspect = options.aspect || 1;
-    const near = options.near || 0.1;
-    const far = options.far || 100;
+    const fovy = options?.fov ?? 1.5;
+    const aspect = options?.aspect ?? 1;
+    const near = options?.near ?? 0.1;
+    const far = options?.far ?? 100;
 
     const s = Math.sin(fovy);
     const rd = 1 / (far - near);
@@ -250,6 +280,22 @@ export default class Mat4 {
       0,           0,  -2 * near * far * rd, 0
     );
     
+    return dst;
+  }
+
+  static fromQuaternion(quaternion: Quat, dst?: Float32Array) {
+    dst = dst || new Float32Array(16);
+
+    Quat.normalize(quaternion, TEMP_QUAT);
+    const q = TEMP_QUAT;
+
+    _fillFloat32Array(dst,
+      1 - 2*q.y*q.y - 2*q.z*q.z, 2*q.x*q.y + 2*q.z*q.w,     2*q.x*q.z - 2*q.y*q.w,     0,
+      2*q.x*q.y - 2*q.z*q.w,     1 - 2*q.x*q.x - 2*q.z*q.z, 2*q.y*q.z + 2*q.x*q.w,     0,
+      2*q.x*q.z + 2*q.y*q.w,     2*q.y*q.z - 2*q.x*q.w,     1 - 2*q.x*q.x - 2*q.y*q.y, 0,
+      0,                         0,                         0,                         1
+    );
+
     return dst;
   }
 }
