@@ -25,5 +25,5 @@
     "noUncheckedSideEffectImports": true,
     "strictPropertyInitialization": true
   },
-  "include": ["src", "vite.config.ts", "eslint.config.mjs"]
+  "include": ["src", "test", "vite.config.ts", "eslint.config.mjs"]
 }
