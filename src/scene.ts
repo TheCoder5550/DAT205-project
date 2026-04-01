@@ -25,12 +25,7 @@ export default class Scene {
   }
 
   addNode(node: ObjectNode) {
-    if (node.scene) {
-      throw new Error("Node has already been added to a scene");
-    }
-    
-    node.scene = this;
-    this.children.push(node);
+    node.setParent(this);
   }
 
   setUniforms() {

@@ -1,4 +1,5 @@
 import WGSL_LIT from "./assets/shaders/lit.wgsl?raw";
+import { traverseChildren } from "./object-node";
 import Scene from "./scene";
 
 interface RendererOptions {
@@ -73,7 +74,6 @@ export default class Renderer {
         format: 'depth24plus',
       },
     });
-
     this.pipeline = pipeline;
 
     const observer = new ResizeObserver(entries => {
@@ -145,34 +145,58 @@ export default class Renderer {
     const pass = encoder.beginRenderPass(renderPassDescriptor);
     pass.setPipeline(pipeline);
 
-    for (const node of scene.children) {
-      if (!node.meshRenderer) {
-        continue;
+    for (const parent of scene.children) {
+      const children = traverseChildren(parent);
+      for (const node of children) {
+        if (!node.meshRenderer) {
+          continue;
+        }
+
+        if (!node.uniform) {
+          node.createUniformBuffer(device);
+        }
+
+        if (!node.meshRenderer.bindGroups) {
+          node.meshRenderer.createBindGroups(device, pipeline);
+        }
+        if (!node.meshRenderer.bindGroups) {
+          throw new Error("Create mesh renderer bind groups first");
+        }
+
+        for (let i = 0; i < node.meshRenderer.nrPrimitives; i++) {
+          const material = node.meshRenderer.materials[i];
+          const geometry = node.meshRenderer.geometries[i];
+          const bindGroup = node.meshRenderer.bindGroups[i];
+
+          if (!geometry.buffers) {
+            geometry.createBuffers(device);
+          }
+          if (!geometry.buffers) {
+            throw new Error("No geometry buffers");
+          }
+
+          node.setUniforms();
+          device.queue.writeBuffer(node.uniform!.buffer, 0, node.uniform!.array);
+
+          material.setUniforms();
+          device.queue.writeBuffer(material.uniform!.buffer, 0, material.uniform!.array);
+
+          const indexFormat = geometry.attributes.indices.format;
+          if (!indexFormat) {
+            throw new Error("Index format must be defined");
+          }
+          pass.setIndexBuffer(geometry.buffers.indices, indexFormat);
+          pass.setVertexBuffer(0, geometry.buffers.position);
+          pass.setVertexBuffer(1, geometry.buffers.normal);
+          
+          pass.setBindGroup(0, bindGroup);
+          pass.drawIndexed(geometry.numVertices);
+        }
       }
-      const material = node.meshRenderer.material;
-      const geometry = node.meshRenderer.geometry;
-      const bindGroup = node.meshRenderer.bindGroup;
-      
-      if (!geometry.buffers) {
-        throw new Error("No geometry buffers");
-      }
-
-      node.setUniforms();
-      device.queue.writeBuffer(node.uniform!.buffer, 0, node.uniform!.array);
-
-      material.setUniforms();
-      device.queue.writeBuffer(material.uniform!.buffer, 0, material.uniform!.array);
-
-      pass.setIndexBuffer(geometry.buffers.indices, 'uint32');
-      pass.setVertexBuffer(0, geometry.buffers.position);
-      pass.setVertexBuffer(1, geometry.buffers.normal);
-
-      pass.setBindGroup(0, bindGroup);
-      pass.drawIndexed(geometry.numVertices);
     }
-
+    
     pass.end();
-
+    
     const commandBuffer = encoder.finish();
     device.queue.submit([commandBuffer]);
   }

@@ -15,6 +15,14 @@ export default class Vec3 {
            Math.abs(a.z - b.z) < epsilon;
   }
 
+  static fromArray(array: [number, number, number], dst?: Vec3) {
+    dst = dst || new Vec3();
+    dst.x = array[0];
+    dst.y = array[1];
+    dst.z = array[2];
+    return;
+  }
+
   static copy(v: Vec3, dst?: Vec3) {
     dst = dst || new Vec3();
     dst.x = v.x;

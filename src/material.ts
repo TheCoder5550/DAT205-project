@@ -4,7 +4,7 @@ interface MaterialUniform {
   views: Record<string, Float32Array<ArrayBuffer>>;
 }
 
-type MaterialProperty = number | ArrayLike<number>;
+type MaterialProperty = number | ArrayLike<number> | undefined;
 
 export default class Material {
   name;
@@ -15,6 +15,8 @@ export default class Material {
     this.name = name;
     this.#properties = {};
     this.uniform = null;
+
+    this.setProperty("albedo", [1, 1, 1, 1]);
   }
 
   setProperty(name: string, value: MaterialProperty) {
@@ -32,6 +34,10 @@ export default class Material {
 
     for (const key of Object.keys(this.uniform.views)) {
       const value = this.#properties[key];
+      if (typeof value === "undefined") {
+        continue;
+      }
+      
       this.uniform.views[key].set(typeof value === "number" ? [ value ] : value);
     }
   }

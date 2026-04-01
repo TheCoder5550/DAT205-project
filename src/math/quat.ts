@@ -18,6 +18,15 @@ export default class Quat {
            Math.abs(a.w - b.w) < epsilon;
   }
 
+  static fromArray(array: [number, number, number, number], dst?: Quat) {
+    dst = dst || new Quat();
+    dst.x = array[0];
+    dst.y = array[1];
+    dst.z = array[2];
+    dst.w = array[3];
+    return dst;
+  }
+
   static copy(q: Quat, dst?: Quat) {
     dst = dst || new Quat();
     dst.x = q.x;

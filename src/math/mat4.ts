@@ -1,4 +1,5 @@
 import Quat from "./quat";
+import type Vec3 from "./vec3";
 
 const TEMP_MATRIX = new Float32Array(16);
 const TEMP_QUAT = new Quat();
@@ -224,6 +225,25 @@ export default class Mat4 {
       0, 0, 0, 1
     );
     Mat4.multiply(dst, TEMP_MATRIX, dst);
+
+    return dst;
+  }
+
+  static applyScale(x: number, y: number, z: number, dst: Float32Array) {
+    dst[0] *= x;  
+    dst[1] *= x;
+    dst[2] *= x;
+    dst[3] *= x;
+
+    dst[4] *= y;
+    dst[5] *= y;
+    dst[6] *= y;
+    dst[7] *= y;
+    
+    dst[8] *= z;
+    dst[9] *= z;
+    dst[10] *= z;
+    dst[11] *= z;
 
     return dst;
   }
