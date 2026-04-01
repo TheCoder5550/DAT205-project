@@ -1,3 +1,6 @@
+import Sampler from "./sampler";
+import Texture from "./texture";
+
 interface MaterialUniform {
   buffer: GPUBuffer;
   array: Float32Array<ArrayBuffer>;
@@ -10,16 +13,35 @@ export default class Material {
   name;
   readonly #properties: Record<string, MaterialProperty>;
   uniform: MaterialUniform | null;
+
+  albedoSampler: Sampler | null;
+  albedoTexture: Texture | null;
   
   constructor(name = "Unnamed") {
     this.name = name;
     this.#properties = {};
     this.uniform = null;
+    this.albedoSampler = null;
+    this.albedoTexture = null;
 
     this.setProperty("albedo", [1, 1, 1, 1]);
   }
 
-  setProperty(name: string, value: MaterialProperty) {
+  setProperty(name: string, value: MaterialProperty | Texture | Sampler) {
+    if (name === "albedoTexture" && value instanceof Texture) {
+      this.albedoTexture = value;
+      return;
+    }
+
+    if (name === "albedoSampler" && value instanceof Sampler) {
+      this.albedoSampler = value;
+      return;
+    }
+
+    if (value instanceof Texture || value instanceof Sampler) {
+      throw new Error("Cannot assign texture/sampler to material");
+    }
+
     this.#properties[name] = value;
   }
 

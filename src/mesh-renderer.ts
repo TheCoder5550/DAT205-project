@@ -1,6 +1,7 @@
 import type Geometry from "./geometry";
 import type Material from "./material";
 import type ObjectNode from "./object-node";
+import type Renderer from "./renderer";
 
 export default class MeshRenderer {
   node: ObjectNode | null;
@@ -22,7 +23,13 @@ export default class MeshRenderer {
     this.nrPrimitives = this.geometries.length;
   }
 
-  createBindGroups(device: GPUDevice, pipeline: GPURenderPipeline) {
+  createBindGroups(renderer: Renderer) {
+    const device = renderer.device;
+    const pipeline = renderer.pipeline;
+    if (!device || !pipeline || !renderer.emptySampler || !renderer.emptyTexture2D) {
+      throw new Error("Setup renderer first");
+    }
+
     const node = this.node;
     if (!node) {
       throw new Error("Add component to node first");
@@ -50,7 +57,23 @@ export default class MeshRenderer {
       if (!material.uniform) {
         throw new Error("Could not create material uniform buffer");
       }
+
+      let texture = renderer.emptyTexture2D;
+      if (material.albedoTexture !== null) {
+        if (!material.albedoTexture.texture) {
+          material.albedoTexture.createGPUTexture(device);
+        }
+        texture = material.albedoTexture.texture!;
+      }
   
+      let sampler = renderer.emptySampler;
+      if (material.albedoSampler !== null) {
+        if (!material.albedoSampler.sampler) {
+          material.albedoSampler.createSampler(device);
+        }
+        sampler = material.albedoSampler.sampler!;
+      }
+
       this.bindGroups[i] = device.createBindGroup({
         label: `meshrenderer bind group for node "${node.name}"`,
         layout: pipeline.getBindGroupLayout(0),
@@ -58,6 +81,9 @@ export default class MeshRenderer {
           { binding: 0, resource: scene.uniform.buffer },
           { binding: 1, resource: node.uniform.buffer },
           { binding: 2, resource: material.uniform.buffer },
+
+          { binding: 3, resource: sampler },
+          { binding: 4, resource: texture },
         ],
       });
     }

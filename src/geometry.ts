@@ -35,27 +35,28 @@ export default class Geometry {
 
   createBuffers(device: GPUDevice) {
     const cubeMesh = this.attributes;
-    const vertexData = cubeMesh.POSITION?.bufferData ?? cubeMesh.position.bufferData;
-    const normalData = cubeMesh.NORMAL?.bufferData ?? cubeMesh.normal?.bufferData;
     const indexData = cubeMesh.indices?.bufferData;
     if (!indexData) {
       throw new Error("Must use 'indices'");
     }
-    const numVertices = indexData.length;
+    this.numVertices = indexData.length;
+    this.buffers = {};
 
-    const normalBuffer = device.createBuffer({
-      label: 'vertex buffer normal',
-      size: vertexData.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(normalBuffer, 0, normalData);
+    for (const [key, attribute] of Object.entries(this.attributes)) {
+      if (key === "indices") {
+        continue;
+      }
 
-    const vertexBuffer = device.createBuffer({
-      label: 'vertex buffer position',
-      size: vertexData.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(vertexBuffer, 0, vertexData);
+      const data = attribute.bufferData;
+      const buffer = device.createBuffer({
+        label: `vertex buffer for attribute "${key}"`,
+        size: data.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(buffer, 0, data);
+
+      this.buffers[key] = buffer;
+    }
 
     const indexBuffer = device.createBuffer({
       label: 'index buffer',
@@ -63,12 +64,6 @@ export default class Geometry {
       usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(indexBuffer, 0, indexData);
-
-    this.buffers = {
-      indices: indexBuffer,
-      position: vertexBuffer,
-      normal: normalBuffer, 
-    }
-    this.numVertices = numVertices;
+    this.buffers["indices"] = indexBuffer;
   }
 }

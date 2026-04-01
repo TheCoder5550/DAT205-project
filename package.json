@@ -13,10 +13,12 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.5.0",
+    "@types/stats.js": "^0.17.4",
     "@webgpu/types": "^0.1.69",
     "eslint": "^10.1.0",
     "json-schema-to-typescript": "^15.0.4",
     "lil-gui": "^0.21.0",
+    "stats.js": "^0.17.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.2",
     "vite": "^8.0.1",

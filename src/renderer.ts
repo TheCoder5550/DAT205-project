@@ -14,6 +14,8 @@ export default class Renderer {
   scenes: Scene[];
   activeScene: Scene | null;
 
+  emptySampler: GPUSampler | null;
+  emptyTexture2D: GPUTexture | null;
   depthTexture: GPUTexture | null;
   pipeline: GPURenderPipeline | null;
 
@@ -21,6 +23,8 @@ export default class Renderer {
     this.options = options;
     this.scenes = [];
     this.activeScene = null;
+    this.emptySampler = null;
+    this.emptyTexture2D = null;
     this.depthTexture = null;
     this.pipeline = null;
   }
@@ -35,6 +39,9 @@ export default class Renderer {
       device,
       format: presentationFormat,
     });
+
+    this.emptySampler = _createEmptySampler(device);
+    this.emptyTexture2D = _createEmptyTextures(device);
 
     const module = device.createShaderModule({
       label: 'lit',
@@ -57,6 +64,12 @@ export default class Renderer {
             arrayStride: 3 * 4,
             attributes: [
               {shaderLocation: 1, offset: 0, format: 'float32x3'},  // normal
+            ],
+          },
+          {
+            arrayStride: 2 * 4,
+            attributes: [
+              {shaderLocation: 2, offset: 0, format: 'float32x2'},  // uv
             ],
           },
         ]
@@ -155,9 +168,12 @@ export default class Renderer {
         if (!node.uniform) {
           node.createUniformBuffer(device);
         }
+        if (!node.uniform) {
+          throw new Error("Node uniform not created");
+        }
 
         if (!node.meshRenderer.bindGroups) {
-          node.meshRenderer.createBindGroups(device, pipeline);
+          node.meshRenderer.createBindGroups(this);
         }
         if (!node.meshRenderer.bindGroups) {
           throw new Error("Create mesh renderer bind groups first");
@@ -168,6 +184,10 @@ export default class Renderer {
           const geometry = node.meshRenderer.geometries[i];
           const bindGroup = node.meshRenderer.bindGroups[i];
 
+          if (!material.uniform) {
+            throw new Error("Material uniform not created");
+          }
+
           if (!geometry.buffers) {
             geometry.createBuffers(device);
           }
@@ -176,18 +196,19 @@ export default class Renderer {
           }
 
           node.setUniforms();
-          device.queue.writeBuffer(node.uniform!.buffer, 0, node.uniform!.array);
+          device.queue.writeBuffer(node.uniform.buffer, 0, node.uniform.array);
 
           material.setUniforms();
-          device.queue.writeBuffer(material.uniform!.buffer, 0, material.uniform!.array);
+          device.queue.writeBuffer(material.uniform.buffer, 0, material.uniform.array);
 
           const indexFormat = geometry.attributes.indices.format;
           if (!indexFormat) {
             throw new Error("Index format must be defined");
           }
           pass.setIndexBuffer(geometry.buffers.indices, indexFormat);
-          pass.setVertexBuffer(0, geometry.buffers.position);
-          pass.setVertexBuffer(1, geometry.buffers.normal);
+          pass.setVertexBuffer(0, geometry.buffers.position ?? geometry.buffers.POSITION);
+          pass.setVertexBuffer(1, geometry.buffers.normal ?? geometry.buffers.NORMAL);
+          pass.setVertexBuffer(2, geometry.buffers.uv ?? geometry.buffers.TEXCOORD_0);
           
           pass.setBindGroup(0, bindGroup);
           pass.drawIndexed(geometry.numVertices);
@@ -247,4 +268,26 @@ export default class Renderer {
       context
     }
   }
+}
+
+function _createEmptySampler(device: GPUDevice) {
+  return device.createSampler();
+}
+
+function _createEmptyTextures(device: GPUDevice) {
+  const kTextureWidth = 1;
+  const kTextureHeight = 1;
+  const textureData = new Uint8Array([255, 255, 255, 255]);
+  const texture = device.createTexture({
+    size: [kTextureWidth, kTextureHeight],
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture(
+    { texture },
+    textureData,
+    { bytesPerRow: kTextureWidth * 4 },
+    { width: kTextureWidth, height: kTextureHeight },
+  );
+  return texture;
 }

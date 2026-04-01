@@ -8,6 +8,7 @@ import './style.css'
 import { degToRad } from './utils';
 import Quat from './math/quat';
 import { loadGLB } from './gltf-loader';
+import Stats from "stats.js";
 
 const app = document.querySelector('#app');
 if (!app) {
@@ -16,6 +17,9 @@ if (!app) {
 
 const canvas = document.createElement("canvas");
 app.appendChild(canvas);
+
+const stats = new Stats();
+document.body.append(stats.dom);
 
 const settings = {
   fov: 25,
@@ -44,12 +48,14 @@ scene.addNode(glb);
 
 const gui = new GUI();
 gui.add(settings, 'fov', 0.1, 90, 1);
-gui.add(settings, 'rotationX', 0, 10, 0.01);
-gui.add(settings, 'rotationY', 0, 10, 0.01);
-gui.add(settings, 'rotationZ', 0, 10, 0.01);
+gui.add(settings, 'rotationX', 0, Math.PI * 2, 0.01);
+gui.add(settings, 'rotationY', 0, Math.PI * 2, 0.01);
+gui.add(settings, 'rotationZ', 0, Math.PI * 2, 0.01);
 gui.add(settings, 'cameraZ', 0, 30, 0.01);
 
 const loop = () => {
+  stats.update();
+
   const aspect = canvas.width / canvas.height;
   camera.setAspect(aspect);
   camera.setFOV(degToRad(settings.fov));
