@@ -2,7 +2,6 @@ import GLB_TEST from "./assets/models/test-gltf.glb?url";
 
 import GUI from 'lil-gui';
 import PerspectiveCamera from './camera/perspective-camera';
-import Mat4 from './math/mat4';
 import Renderer from './renderer';
 import Scene from './scene';
 import './style.css'

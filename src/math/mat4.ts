@@ -1,5 +1,4 @@
 import Quat from "./quat";
-import type Vec3 from "./vec3";
 
 const TEMP_MATRIX = new Float32Array(16);
 const TEMP_QUAT = new Quat();
