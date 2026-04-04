@@ -7,6 +7,7 @@ import ObjectNode from "./object-node";
 import Sampler from "./sampler";
 import Texture from "./texture";
 import type { GlTF } from "./types/gltf";
+import { loadImageBitmap } from "./utils";
 
 const COMPONENT_TYPE = {
   5120: Int8Array,
@@ -281,10 +282,4 @@ async function fetchGLB(path: string): Promise<ArrayBuffer> {
   const res = await fetch(path);
   const data = await res.arrayBuffer();
   return data;
-}
-
-async function loadImageBitmap(url: string) {
-  const res = await fetch(url);
-  const blob = await res.blob();
-  return await createImageBitmap(blob, { colorSpaceConversion: 'none' });
 }
