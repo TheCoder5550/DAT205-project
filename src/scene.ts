@@ -15,6 +15,7 @@ export default class Scene {
   camera: Camera | null;
   readonly children: ObjectNode[];
   uniform: SceneUniform | null;
+  bindGroup: GPUBindGroup | null;
 
   constructor(name = "Unnamed") {
     this.name = name;
@@ -22,6 +23,7 @@ export default class Scene {
     this.camera = null;
     this.children = [];
     this.uniform = null;
+    this.bindGroup = null;
   }
 
   addNode(node: ObjectNode) {
@@ -42,7 +44,7 @@ export default class Scene {
     Mat4.copy(this.camera.transform.matrix, this.uniform.views.cameraMatrix);
   }
 
-  createUniformBuffer(device: GPUDevice) {
+  createUniformBuffer(renderer: Renderer, device: GPUDevice) {
     const size = (16 + 16 + 16) * 4;
     const buffer = device.createBuffer({
       label: `scene "${this.name}" uniforms`,
@@ -63,5 +65,13 @@ export default class Scene {
       array: array,
       views: views
     }
+
+    this.bindGroup = device.createBindGroup({
+      label: `Scene: ${this.name}`,
+      layout: renderer.layouts.scene,
+      entries: [
+        { binding: 0, resource: buffer },
+      ],
+    });
   }
 }

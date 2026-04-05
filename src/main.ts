@@ -9,6 +9,7 @@ import { degToRad } from './utils';
 import Quat from './math/quat';
 import { loadGLB } from './gltf-loader';
 import Stats from "stats.js";
+import type ObjectNode from "./object-node";
 
 const app = document.querySelector('#app');
 if (!app) {
@@ -32,7 +33,7 @@ const settings = {
 const renderer = new Renderer({ canvas });
 await renderer.initialize();
 
-if (!renderer.device || !renderer.pipeline) {
+if (!renderer.device) {
   throw new Error("Renderer setup failed");
 }
 
@@ -41,7 +42,6 @@ const camera = new PerspectiveCamera();
 const scene = new Scene("Main scene");
 renderer.addScene(scene);
 scene.camera = camera;
-scene.createUniformBuffer(renderer.device);
 
 const glb = await loadGLB(GLB_TEST);
 scene.addNode(glb);
@@ -52,6 +52,49 @@ gui.add(settings, 'rotationX', 0, Math.PI * 2, 0.01);
 gui.add(settings, 'rotationY', 0, Math.PI * 2, 0.01);
 gui.add(settings, 'rotationZ', 0, Math.PI * 2, 0.01);
 gui.add(settings, 'cameraZ', 0, 30, 0.01);
+
+let selectedNode: ObjectNode | null = null;
+
+let selectedFolder: GUI | null = null;
+
+const root = gui.addFolder(`Scene: ${scene.name}`);
+const createFolders = (parentFolder: GUI, nodes: ObjectNode[]) => {
+  for (const node of nodes) {
+    const folder = parentFolder.addFolder(node.name);
+    folder.close();
+    folder.add({
+      ["Select node"]: () => {
+        selectedNode = node;
+
+        if (selectedFolder) {
+          selectedFolder.destroy();
+        }
+        selectedFolder = gui.addFolder("Selected node");
+
+        selectedFolder.add(selectedNode, "name");
+
+        const posFolder = selectedFolder.addFolder("Position");
+        const rotFolder = selectedFolder.addFolder("Rotation");
+        const scaleFolder = selectedFolder.addFolder("Scale");
+
+        posFolder.add(selectedNode.transform.position, "x");
+        posFolder.add(selectedNode.transform.position, "y");
+        posFolder.add(selectedNode.transform.position, "z");
+
+        rotFolder.add(selectedNode.transform.rotation, "x");
+        rotFolder.add(selectedNode.transform.rotation, "y");
+        rotFolder.add(selectedNode.transform.rotation, "z");
+        rotFolder.add(selectedNode.transform.rotation, "w");
+
+        scaleFolder.add(selectedNode.transform.scale, "x");
+        scaleFolder.add(selectedNode.transform.scale, "y");
+        scaleFolder.add(selectedNode.transform.scale, "z");
+      }
+    }, "Select node");
+    createFolders(folder, node.children);
+  }
+}
+createFolders(root, scene.children);
 
 const loop = () => {
   stats.update();

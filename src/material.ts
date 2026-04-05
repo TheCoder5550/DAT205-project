@@ -1,3 +1,4 @@
+import type Renderer from "./renderer";
 import Sampler from "./sampler";
 import Texture from "./texture";
 
@@ -12,6 +13,7 @@ type MaterialProperty = number | ArrayLike<number> | undefined;
 export default class Material {
   name;
   readonly #properties: Record<string, MaterialProperty>;
+  bindGroup: GPUBindGroup | null;
   uniform: MaterialUniform | null;
 
   albedoSampler: Sampler | null;
@@ -20,6 +22,7 @@ export default class Material {
   constructor(name = "Unnamed") {
     this.name = name;
     this.#properties = {};
+    this.bindGroup = null;
     this.uniform = null;
     this.albedoSampler = null;
     this.albedoTexture = null;
@@ -64,7 +67,7 @@ export default class Material {
     }
   }
 
-  createUniformBuffer(device: GPUDevice) {
+  createUniformBuffer(renderer: Renderer, device: GPUDevice) {
     if (this.uniform) {
       throw new Error("Uniforms already created");
     }
@@ -88,5 +91,31 @@ export default class Material {
       array: array,
       views: views
     }
+
+    let texture = renderer.emptyTexture2D!;
+    if (this.albedoTexture !== null) {
+      if (!this.albedoTexture.texture) {
+        this.albedoTexture.createGPUTexture(device);
+      }
+      texture = this.albedoTexture.texture!;
+    }
+
+    let sampler = renderer.emptySampler!;
+    if (this.albedoSampler !== null) {
+      if (!this.albedoSampler.sampler) {
+        this.albedoSampler.createSampler(device);
+      }
+      sampler = this.albedoSampler.sampler!;
+    }
+
+    this.bindGroup = device.createBindGroup({
+      label: `Material: ${this.name}`,
+      layout: renderer.layouts.material,
+      entries: [
+        { binding: 0, resource: buffer },
+        { binding: 1, resource: sampler },
+        { binding: 2, resource: texture },
+      ],
+    });
   }
 }

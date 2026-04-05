@@ -1,7 +1,9 @@
 import Mat3 from "./math/mat3";
 import Mat4 from "./math/mat4";
 import type MeshRenderer from "./mesh-renderer";
+import type Renderer from "./renderer";
 import Scene from "./scene";
+import type Skin from "./skin";
 import Transform from "./transform";
 
 interface ObjectUniform {
@@ -17,8 +19,11 @@ export default class ObjectNode {
   #parent: ObjectNode | Scene | null;
   children: ObjectNode[];
   scene: Scene | null;
+  bindGroup: GPUBindGroup | null;
   uniform: ObjectUniform | null;
   meshRenderer: MeshRenderer | null;
+
+  skin: Skin | null;
   
   constructor(name = "Unnamed") {
     // const TEMP_MAT4 = Mat4.identity();
@@ -33,8 +38,10 @@ export default class ObjectNode {
     this.#parent = null;
     this.children = [];
     this.scene = null;
+    this.bindGroup = null;
     this.uniform = null;
     this.meshRenderer = null;
+    this.skin = null;
   }
 
   getParent() {
@@ -102,7 +109,7 @@ export default class ObjectNode {
     Mat3.copy(normalMatrix, this.uniform.views.normalMatrix);
   }
 
-  createUniformBuffer(device: GPUDevice) {
+  createUniformBuffer(renderer: Renderer, device: GPUDevice) {
     if (this.uniform) {
       throw new Error("Uniforms already created");
     }
@@ -126,10 +133,18 @@ export default class ObjectNode {
       array: array,
       views: views
     }
+
+    this.bindGroup = device.createBindGroup({
+      label: `Node: ${this.name}`,
+      layout: renderer.layouts.object,
+      entries: [
+        { binding: 0, resource: buffer },
+      ],
+    });
   }
 }
 
-function getWorldMatrix(node: ObjectNode, dst: Float32Array) {
+export function getWorldMatrix(node: ObjectNode, dst: Float32Array) {
   Mat4.copy(node.transform.matrix, dst);
   let currentNode: ObjectNode | null = node;
   while (currentNode !== null) {

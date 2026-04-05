@@ -5,6 +5,7 @@ import Vec3 from "./math/vec3";
 import MeshRenderer from "./mesh-renderer";
 import ObjectNode from "./object-node";
 import Sampler from "./sampler";
+import Skin from "./skin";
 import Texture from "./texture";
 import type { GlTF } from "./types/gltf";
 import { loadImageBitmap } from "./utils";
@@ -59,6 +60,7 @@ export async function loadGLB(path: string): Promise<ObjectNode> {
   const textures = json.textures ?? [];
   const materials = json.materials ?? [];
   const meshes = json.meshes ?? [];
+  const skins = json.skins ?? [];
   const nodes = json.nodes ?? [];
   const scenes = json.scenes ?? [];
 
@@ -160,7 +162,21 @@ export async function loadGLB(path: string): Promise<ObjectNode> {
   });
 
   const processedNodes = nodes.map(node => {
-    const obj = new ObjectNode(node.name);
+    return new ObjectNode(node.name);
+  });
+
+  const processedSkins = skins.map(skin => {
+    const joints = skin.joints.map(joint => processedNodes[joint]);
+    const processed = new Skin(joints, skin.name);
+    if (typeof skin.inverseBindMatrices !== "undefined") {
+      processed.inverseBindMatrices = processedAccessors[skin.inverseBindMatrices];
+    }
+    return processed;
+  });
+
+  for (let i = 0; i < processedNodes.length; i++) {
+    const obj = processedNodes[i];
+    const node = nodes[i];
 
     if (node.matrix) {
       obj.transform.setMatrix(new Float32Array(node.matrix));
@@ -211,10 +227,13 @@ export async function loadGLB(path: string): Promise<ObjectNode> {
       const meshRenderer = new MeshRenderer(geometry, materials);
       meshRenderer.node = obj;
       obj.meshRenderer = meshRenderer;
-    }
 
-    return obj;
-  });
+      if (typeof node.skin !== "undefined") {
+        const skin = processedSkins[node.skin];
+        obj.skin = skin;
+      }
+    }
+  }
 
   for (let i = 0; i < nodes.length; i++) {
     const processedParent = processedNodes[i];

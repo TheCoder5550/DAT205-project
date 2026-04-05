@@ -1,5 +1,7 @@
 import WGSL_LIT from "./assets/shaders/lit.wgsl?raw";
-import { traverseChildren } from "./object-node";
+import WGSL_LIT_SKINNED from "./assets/shaders/lit-skinned.wgsl?raw";
+
+import ObjectNode, { traverseChildren } from "./object-node";
 import Scene from "./scene";
 
 interface RendererOptions {
@@ -17,7 +19,9 @@ export default class Renderer {
   emptySampler: GPUSampler | null;
   emptyTexture2D: GPUTexture | null;
   depthTexture: GPUTexture | null;
-  pipeline: GPURenderPipeline | null;
+
+  layouts: Record<string, GPUBindGroupLayout>;
+  pipelines: Record<string, GPURenderPipeline>;
 
   constructor(options: RendererOptions) {
     this.options = options;
@@ -26,7 +30,8 @@ export default class Renderer {
     this.emptySampler = null;
     this.emptyTexture2D = null;
     this.depthTexture = null;
-    this.pipeline = null;
+    this.layouts = {};
+    this.pipelines = {};
   }
 
   async initialize() {
@@ -42,17 +47,29 @@ export default class Renderer {
 
     this.emptySampler = _createEmptySampler(device);
     this.emptyTexture2D = _createEmptyTextures(device);
+    this.layouts = _createLayouts(device);
 
-    const module = device.createShaderModule({
+    const litModule = device.createShaderModule({
       label: 'lit',
       code: WGSL_LIT,
     });
 
-    const pipeline = device.createRenderPipeline({
+    const litSkinnedModule = device.createShaderModule({
+      label: 'lit skinned',
+      code: WGSL_LIT_SKINNED,
+    });
+
+    this.pipelines["lit"] = device.createRenderPipeline({
       label: 'lit',
-      layout: 'auto',
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [
+          this.layouts.scene,
+          this.layouts.object,
+          this.layouts.material,
+        ]
+      }),
       vertex: {
-        module,
+        module: litModule,
         buffers: [
           {
             arrayStride: 3 * 4,
@@ -75,7 +92,7 @@ export default class Renderer {
         ]
       },
       fragment: {
-        module,
+        module: litModule,
         targets: [{ format: presentationFormat }],
       },
       primitive: {
@@ -87,7 +104,67 @@ export default class Renderer {
         format: 'depth24plus',
       },
     });
-    this.pipeline = pipeline;
+
+    this.pipelines["lit-skinned"] = device.createRenderPipeline({
+      label: 'lit skinned',
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [
+          this.layouts.scene,
+          this.layouts.object,
+          this.layouts.material,
+          this.layouts.skin,
+        ]
+      }),
+      vertex: {
+        module: litSkinnedModule,
+        buffers: [
+          {
+            arrayStride: 3 * 4,
+            attributes: [
+              {shaderLocation: 0, offset: 0, format: 'float32x3'},  // position
+            ],
+          },
+          {
+            arrayStride: 3 * 4,
+            attributes: [
+              {shaderLocation: 1, offset: 0, format: 'float32x3'},  // normal
+            ],
+          },
+          {
+            arrayStride: 2 * 4,
+            attributes: [
+              {shaderLocation: 2, offset: 0, format: 'float32x2'},  // uv
+            ],
+          },
+          {
+            arrayStride: 4 * 1,
+            attributes: [
+              // {shaderLocation: 3, offset: 0, format: 'float32x4'},  // joints
+              {shaderLocation: 3, offset: 0, format: 'uint8x4'},  // joints
+              // {shaderLocation: 3, offset: 0, format: 'uint32x4'},  // joints
+            ],
+          },
+          {
+            arrayStride: 4 * 4,
+            attributes: [
+              {shaderLocation: 4, offset: 0, format: 'float32x4'},  // weights
+            ],
+          },
+        ]
+      },
+      fragment: {
+        module: litModule,
+        targets: [{ format: presentationFormat }],
+      },
+      primitive: {
+        cullMode: 'back',
+      },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+        format: 'depth24plus',
+      },
+    });
 
     const observer = new ResizeObserver(entries => {
       for (const entry of entries) {
@@ -109,8 +186,7 @@ export default class Renderer {
     
     const context = this.context;
     const device = this.device;
-    const pipeline = this.pipeline;
-    if (!device || !context || !pipeline) {
+    if (!device || !context) {
       throw new Error("Setup first");
     }
 
@@ -151,55 +227,50 @@ export default class Renderer {
       },
     };
 
+    if (!scene.uniform) {
+      scene.createUniformBuffer(this, device);
+    }
+    if (!scene.uniform) {
+      throw new Error("Could not create scene uniform");
+    }
     scene.setUniforms();
-    device.queue.writeBuffer(scene.uniform!.buffer, 0, scene.uniform!.array);
+    device.queue.writeBuffer(scene.uniform.buffer, 0, scene.uniform.array);
 
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass(renderPassDescriptor);
-    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, scene.bindGroup);
 
-    for (const parent of scene.children) {
-      const children = traverseChildren(parent);
-      for (const node of children) {
+    const map = _getRenderablesPerPipeline(this, scene);
+    for (const [name, nodes] of Object.entries(map)) {
+      const pipeline = this.pipelines[name];
+      pass.setPipeline(pipeline);
+
+      for (const node of nodes) {
         if (!node.meshRenderer) {
           continue;
         }
-
         if (!node.uniform) {
-          node.createUniformBuffer(device);
-        }
-        if (!node.uniform) {
-          throw new Error("Node uniform not created");
+          throw new Error("");
         }
 
-        if (!node.meshRenderer.bindGroups) {
-          node.meshRenderer.createBindGroups(this);
-        }
-        if (!node.meshRenderer.bindGroups) {
-          throw new Error("Create mesh renderer bind groups first");
-        }
+        node.setUniforms();
+        device.queue.writeBuffer(node.uniform.buffer, 0, node.uniform.array);
+        pass.setBindGroup(1, node.bindGroup);
 
         for (let i = 0; i < node.meshRenderer.nrPrimitives; i++) {
           const material = node.meshRenderer.materials[i];
           const geometry = node.meshRenderer.geometries[i];
-          const bindGroup = node.meshRenderer.bindGroups[i];
 
           if (!material.uniform) {
             throw new Error("Material uniform not created");
-          }
-
-          if (!geometry.buffers) {
-            geometry.createBuffers(device);
           }
           if (!geometry.buffers) {
             throw new Error("No geometry buffers");
           }
 
-          node.setUniforms();
-          device.queue.writeBuffer(node.uniform.buffer, 0, node.uniform.array);
-
           material.setUniforms();
           device.queue.writeBuffer(material.uniform.buffer, 0, material.uniform.array);
+          pass.setBindGroup(2, material.bindGroup);
 
           const indexFormat = geometry.attributes.indices.format;
           if (!indexFormat) {
@@ -210,12 +281,18 @@ export default class Renderer {
           pass.setVertexBuffer(1, geometry.buffers.normal ?? geometry.buffers.NORMAL);
           pass.setVertexBuffer(2, geometry.buffers.uv ?? geometry.buffers.TEXCOORD_0);
           
-          pass.setBindGroup(0, bindGroup);
+          if (name === "lit-skinned" && node.skin) {
+            node.skin.update(device, node);
+            pass.setVertexBuffer(3, geometry.buffers.JOINTS_0);
+            pass.setVertexBuffer(4, geometry.buffers.WEIGHTS_0);
+            pass.setBindGroup(3, node.skin.bindGroup);
+          }
+
           pass.drawIndexed(geometry.numVertices);
         }
       }
     }
-    
+
     pass.end();
     
     const commandBuffer = encoder.finish();
@@ -270,6 +347,52 @@ export default class Renderer {
   }
 }
 
+function _getRenderablesPerPipeline(renderer: Renderer, scene: Scene) {
+  const device = renderer.device!;
+
+  const map: Record<keyof typeof renderer.pipelines, ObjectNode[]> = {};
+
+  for (const name of Object.keys(renderer.pipelines)) {
+    map[name] = [];
+  }
+
+  for (const parent of scene.children) {
+    const children = traverseChildren(parent);
+    for (const node of children) {
+      if (!node.meshRenderer) {
+        continue;
+      }
+
+      if (node.skin) {
+        map["lit-skinned"].push(node);
+        if (!node.skin.bindGroup) {
+          node.skin.createUniformBuffer(renderer, device);
+        }
+      }
+      else {
+        map["lit"].push(node);
+      }
+
+      if (!node.uniform) {
+        node.createUniformBuffer(renderer, device);
+      }
+      for (let i = 0; i < node.meshRenderer.nrPrimitives; i++) {
+        const material = node.meshRenderer.materials[i];
+        const geometry = node.meshRenderer.geometries[i];
+
+        if (!material.uniform) {
+          material.createUniformBuffer(renderer, device);
+        }
+        if (!geometry.buffers) {
+          geometry.createBuffers(device);
+        }
+      }
+    }
+  }
+
+  return map;
+}
+
 function _createEmptySampler(device: GPUDevice) {
   return device.createSampler();
 }
@@ -290,4 +413,73 @@ function _createEmptyTextures(device: GPUDevice) {
     { width: kTextureWidth, height: kTextureHeight },
   );
   return texture;
+}
+
+function _createLayouts(device: GPUDevice) {
+  const layouts: Record<string, GPUBindGroupLayout> = {};
+
+  layouts.scene = device.createBindGroupLayout({
+    label: "scene layout",
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: { type: "uniform" }
+      },
+    ]
+  });
+
+  layouts.object = device.createBindGroupLayout({
+    label: "object layout",
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: { type: "uniform" }
+      },
+    ]
+  });
+
+  layouts.material = device.createBindGroupLayout({
+    label: "material layout",
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: { type: "uniform" }
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        sampler: {},
+      },
+      {
+        binding: 2,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        texture: {},
+      },
+    ]
+  });
+
+  layouts.skin = device.createBindGroupLayout({
+    label: "skin layout",
+    entries: [
+      {
+        binding: 0,
+        buffer: {
+          type: 'read-only-storage',
+        },
+        visibility: GPUShaderStage.VERTEX,
+      },
+      {
+        binding: 1,
+        buffer: {
+          type: 'read-only-storage',
+        },
+        visibility: GPUShaderStage.VERTEX,
+      },
+    ],
+  });
+
+  return layouts;
 }
