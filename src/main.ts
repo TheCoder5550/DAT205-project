@@ -6,10 +6,10 @@ import Renderer from './renderer';
 import Scene from './scene';
 import './style.css'
 import { degToRad } from './utils';
-import Quat from './math/quat';
 import { loadGLB } from './gltf-loader';
 import Stats from "stats.js";
 import type ObjectNode from "./object-node";
+import OrbitCamera from "./camera/orbit-camera";
 
 const app = document.querySelector('#app');
 if (!app) {
@@ -24,10 +24,6 @@ document.body.append(stats.dom);
 
 const settings = {
   fov: 25,
-  rotationX: 0.5,
-  rotationY: 0,
-  rotationZ: 0,
-  cameraZ: 20,
 }
 
 const renderer = new Renderer({ canvas });
@@ -38,6 +34,7 @@ if (!renderer.device) {
 }
 
 const camera = new PerspectiveCamera();
+new OrbitCamera(camera, canvas);
 
 const scene = new Scene("Main scene");
 renderer.addScene(scene);
@@ -48,10 +45,6 @@ scene.addNode(glb);
 
 const gui = new GUI();
 gui.add(settings, 'fov', 0.1, 90, 1);
-gui.add(settings, 'rotationX', 0, Math.PI * 2, 0.01);
-gui.add(settings, 'rotationY', 0, Math.PI * 2, 0.01);
-gui.add(settings, 'rotationZ', 0, Math.PI * 2, 0.01);
-gui.add(settings, 'cameraZ', 0, 30, 0.01);
 
 let selectedNode: ObjectNode | null = null;
 
@@ -102,9 +95,6 @@ const loop = () => {
   const aspect = canvas.width / canvas.height;
   camera.setAspect(aspect);
   camera.setFOV(degToRad(settings.fov));
-  camera.transform.position.z = settings.cameraZ;
-
-  Quat.euler(settings.rotationX, settings.rotationY, settings.rotationZ, glb.transform.rotation);
 
   renderer.render();
 

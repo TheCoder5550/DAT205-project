@@ -58,8 +58,12 @@ export default class Transform {
 
   setMatrix(matrix: Float32Array) {
     Mat4.copy(matrix, this.#matrix);
-    
-    throw new Error("Not implemented");
+
+    Mat4.extractTranslation(this.#matrix, this.position);
+    Quat.fromMatrix(this.#matrix, this.rotation);
+    Mat4.extractScale(this.#matrix, this.scale);
+
+    this.updateMatrix();
   }
 
   get matrix() {

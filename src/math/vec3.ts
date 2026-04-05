@@ -46,4 +46,22 @@ export default class Vec3 {
     dst.z = 1;
     return dst;
   }
+
+  static add(a: Vec3, b: Vec3, dst: Vec3) {
+    dst = dst || new Vec3();
+    dst.x = a.x + b.x;
+    dst.y = a.y + b.y;
+    dst.z = a.z + b.z;
+    return dst;
+  }
+
+  static length(v: Vec3) {
+    const sum = v.x * v.x + v.y * v.y + v.z * v.z;
+    return Math.sqrt(sum);
+  }
+
+  static lengthAlt(x: number, y: number, z: number) {
+    const sum = x * x + y * y + z * z;
+    return Math.sqrt(sum);
+  }
 }

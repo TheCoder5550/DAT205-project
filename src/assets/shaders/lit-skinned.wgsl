@@ -76,10 +76,10 @@ struct VSOutput {
   let surfaceToViewDirection = normalize(vsOutput.surfaceToView);
   let halfVector = normalize(sun + surfaceToViewDirection);
 
-  let diffuse = dot(normal, sun);
-  let specular = pow(saturate(dot(normal, halfVector)), uniformsMaterial.shininess) * saturate(uniformsMaterial.shininess);
+  let diffuse = saturate(dot(normal, sun));
+  let specular = pow(saturate(dot(normal, halfVector)), max(1, uniformsMaterial.shininess)) * saturate(uniformsMaterial.shininess / 10);
   let albedo = textureSample(albedoTexture, albedoSampler, uv) * uniformsMaterial.albedo;
-  let color = albedo.rgb * diffuse + specular;
+  let color = albedo.rgb * diffuse + specular * saturate(diffuse * 10);
 
   return vec4f(color, albedo.a);
 }

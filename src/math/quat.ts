@@ -1,3 +1,7 @@
+import Mat4 from "./mat4";
+
+const TEMP_MATRIX = new Float32Array(16);
+
 export default class Quat {
   x: number;
   y: number;
@@ -81,6 +85,50 @@ export default class Quat {
     dst.z = qz;
     dst.w = qw;
     
+    return dst;
+  }
+
+  static fromMatrix(m: Float32Array, dst?: Quat) {
+    dst = dst || new Quat();
+
+    m = Mat4.extractRotationMatrix(m, TEMP_MATRIX);
+
+    const trace = Mat4.get(m, 0, 0) + Mat4.get(m, 1, 1) + Mat4.get(m, 2, 2);
+    if (trace > 0) {
+      const s = 0.5 / Math.sqrt(trace + 1);
+
+      dst.x = (Mat4.get(m, 2, 1) - Mat4.get(m, 1, 2)) * s;
+      dst.y = (Mat4.get(m, 0, 2) - Mat4.get(m, 2, 0)) * s;
+      dst.z = (Mat4.get(m, 1, 0) - Mat4.get(m, 0, 1)) * s;
+      dst.w = 0.25 / s;
+    }
+    else {
+      if (Mat4.get(m, 0, 0) > Mat4.get(m, 1, 1) && Mat4.get(m, 0, 0) > Mat4.get(m, 2, 2)) {
+        const s = 2 * Math.sqrt(1 + Mat4.get(m, 0, 0) - Mat4.get(m, 1, 1) - Mat4.get(m, 2, 2));
+
+        dst.x = 0.25 * s;
+        dst.y = (Mat4.get(m, 0, 1) + Mat4.get(m, 1, 0)) / s;
+        dst.z = (Mat4.get(m, 0, 2) + Mat4.get(m, 2, 0)) / s;
+        dst.w = (Mat4.get(m, 2, 1) - Mat4.get(m, 1, 2)) / s;
+      }
+      else if (Mat4.get(m, 1, 1) > Mat4.get(m, 2, 2)) {
+        const s = 2 * Math.sqrt(1 + Mat4.get(m, 1, 1) - Mat4.get(m, 0, 0) - Mat4.get(m, 2, 2));
+
+        dst.x = (Mat4.get(m, 0, 1) + Mat4.get(m, 1, 0)) / s;
+        dst.y = 0.25 * s;
+        dst.z = (Mat4.get(m, 1, 2) + Mat4.get(m, 2, 1)) / s;
+        dst.w = (Mat4.get(m, 0, 2) - Mat4.get(m, 2, 0)) / s;
+      }
+      else {
+        const s = 2 * Math.sqrt(1 + Mat4.get(m, 2, 2) - Mat4.get(m, 0, 0) - Mat4.get(m, 1, 1));
+
+        dst.x = (Mat4.get(m, 0, 2) + Mat4.get(m, 2, 0)) / s;
+        dst.y = (Mat4.get(m, 1, 2) + Mat4.get(m, 2, 1)) / s;
+        dst.z = 0.25 * s;
+        dst.w = (Mat4.get(m, 1, 0) - Mat4.get(m, 0, 1)) / s;
+      }
+    }
+
     return dst;
   }
 }

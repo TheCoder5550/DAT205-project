@@ -1,4 +1,5 @@
 import Quat from "./quat";
+import Vec3 from "./vec3";
 
 const TEMP_MATRIX = new Float32Array(16);
 const TEMP_QUAT = new Quat();
@@ -13,6 +14,10 @@ export default class Mat4 {
       0, 0, 0, 1
     );
     return dst;
+  }
+
+  static get(m: Float32Array, row: number, column: number) {
+    return m[row + column * 4];
   }
 
   static copy(m: Float32Array, dst?: Float32Array) {
@@ -181,11 +186,65 @@ export default class Mat4 {
     return dst;
   }
 
+  static determinant(a: Float32Array) {
+    const a00 = a[0],
+      a01 = a[1],
+      a02 = a[2],
+      a03 = a[3];
+    const a10 = a[4],
+      a11 = a[5],
+      a12 = a[6],
+      a13 = a[7];
+    const a20 = a[8],
+      a21 = a[9],
+      a22 = a[10],
+      a23 = a[11];
+    const a30 = a[12],
+      a31 = a[13],
+      a32 = a[14],
+      a33 = a[15];
+  
+    const b0 = a00 * a11 - a01 * a10;
+    const b1 = a00 * a12 - a02 * a10;
+    const b2 = a01 * a12 - a02 * a11;
+    const b3 = a20 * a31 - a21 * a30;
+    const b4 = a20 * a32 - a22 * a30;
+    const b5 = a21 * a32 - a22 * a31;
+    const b6 = a00 * b5 - a01 * b4 + a02 * b3;
+    const b7 = a10 * b5 - a11 * b4 + a12 * b3;
+    const b8 = a20 * b2 - a21 * b1 + a22 * b0;
+    const b9 = a30 * b2 - a31 * b1 + a32 * b0;
+  
+    return a13 * b6 - a03 * b7 + a33 * b8 - a23 * b9;
+  }
+
+  static transformVector(m: Float32Array, v: Vec3, dst?: Vec3) {
+    dst = dst || new Vec3();
+
+    const vx = v.x;
+    const vy = v.y;
+    const vz = v.z;
+
+    dst.x = m[0] * vx + m[4] * vy + m[8]  * vz + m[12];
+    dst.y = m[1] * vx + m[5] * vy + m[9]  * vz + m[13];
+    dst.z = m[2] * vx + m[6] * vy + m[10] * vz + m[14];
+
+    return dst;
+  }
+
   static applyTranslation(x: number, y: number, z: number, dst: Float32Array) {
     dst[12] += dst[0] * x + dst[4] * y + dst[8]  * z;
     dst[13] += dst[1] * x + dst[5] * y + dst[9]  * z;
     dst[14] += dst[2] * x + dst[6] * y + dst[10] * z;
     dst[15] += dst[3] * x + dst[7] * y + dst[11] * z;
+    return dst;
+  }
+
+  static extractTranslation(m: Float32Array, dst?: Vec3) {
+    dst = dst || Vec3.zero();
+    dst.x = m[12];
+    dst.y = m[13];
+    dst.z = m[14];
     return dst;
   }
 
@@ -228,6 +287,30 @@ export default class Mat4 {
     return dst;
   }
 
+  static extractRotationMatrix(m: Float32Array, dst?: Float32Array) {
+    dst = dst || new Float32Array(16);
+
+    let sx = Vec3.lengthAlt(m[0], m[1], m[2]);
+    let sy = Vec3.lengthAlt(m[4], m[5], m[6]);
+    let sz = Vec3.lengthAlt(m[8], m[9], m[10]);
+
+    const mirror = Mat4.determinant(m) < 0;
+    if (mirror) {
+      sx *= -1;
+      sy *= -1;
+      sz *= -1;
+    }
+
+    _fillFloat32Array(dst,
+      m[0] / sx, m[1] / sx, m[2] / sx, 0,
+      m[4] / sy, m[5] / sy, m[6] / sy, 0,
+      m[8] / sz, m[9] / sz, m[10] / sz, 0,
+      0, 0, 0, 1
+    );
+
+    return dst;
+  }
+
   static applyScale(x: number, y: number, z: number, dst: Float32Array) {
     dst[0] *= x;  
     dst[1] *= x;
@@ -243,6 +326,23 @@ export default class Mat4 {
     dst[9] *= z;
     dst[10] *= z;
     dst[11] *= z;
+
+    return dst;
+  }
+
+  static extractScale(m: Float32Array, dst?: Vec3) {
+    dst = dst || new Vec3();
+
+    dst.x = Vec3.lengthAlt(m[0], m[1], m[2]);
+    dst.y = Vec3.lengthAlt(m[4], m[5], m[6]);
+    dst.z = Vec3.lengthAlt(m[8], m[9], m[10]);
+
+    const mirror = Mat4.determinant(m) < 0;
+    if (mirror) {
+      dst.x *= -1;
+      dst.y *= -1;
+      dst.z *= -1;
+    }
 
     return dst;
   }
