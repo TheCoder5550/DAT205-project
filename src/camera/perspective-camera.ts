@@ -17,7 +17,7 @@ export default class PerspectiveCamera extends Camera {
   constructor(options?: PerspectiveCameraOptions) {
     super();
 
-    this.#fov = options?.fov ?? 1.5;
+    this.#fov = options?.fov ?? 0.5;
     this.#aspect = options?.aspect ?? 1;
     this.#near = options?.near ?? 0.1;
     this.#far = options?.far ?? 100;

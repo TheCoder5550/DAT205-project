@@ -254,3 +254,105 @@ export const generateMipmaps = (() => {
     device.queue.submit([commandBuffer]);
   };
 })();
+
+export const visualizeDepthTexture = (() => {
+  let sampler: GPUSampler;
+  let module: GPUShaderModule;
+  let pipeline: GPURenderPipeline;
+
+  return function visualizeDepthTexture(device: GPUDevice, texture: GPUTexture, canvasTexture: GPUTexture) {
+    if (!module) {
+      module = device.createShaderModule({
+        label: 'depth vis',
+        code: /* wgsl */ `
+          struct VSOutput {
+            @builtin(position) position: vec4f,
+            @location(0) texcoord: vec2f,
+          };
+
+          @vertex fn vs(
+            @builtin(vertex_index) vertexIndex : u32
+          ) -> VSOutput {
+            let pos = array(
+              // 1st triangle
+              vec2f( 0.0,  0.0),  // center
+              vec2f( 1.0,  0.0),  // right, center
+              vec2f( 0.0,  1.0),  // center, top
+
+              // 2nd triangle
+              vec2f( 0.0,  1.0),  // center, top
+              vec2f( 1.0,  0.0),  // right, center
+              vec2f( 1.0,  1.0),  // right, top
+            );
+
+            var vsOutput: VSOutput;
+            let xy = pos[vertexIndex];
+            vsOutput.position = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
+            vsOutput.texcoord = vec2f(xy.x, 1.0 - xy.y);
+            return vsOutput;
+          }
+
+          @group(0) @binding(0) var depthTex: texture_depth_2d;
+
+          @fragment fn fs(fsInput: VSOutput) -> @location(0) vec4f {
+            // let depth = textureSample(depthTex, depthSampler, fsInput.texcoord);
+            
+            var depth_dimensions = textureDimensions(depthTex);
+            var texel_coords = vec2u(fsInput.texcoord * vec2f(depth_dimensions));
+            var depth = textureLoad(depthTex, texel_coords, 0);
+            depth = pow(depth, 20);
+
+            return vec4<f32>(depth, depth, depth, 1.0);
+          }
+        `,
+      });
+    }
+
+    if (!pipeline) {
+      pipeline = device.createRenderPipeline({
+        label: 'depth vis',
+        layout: 'auto',
+        vertex: {
+          module,
+        },
+        fragment: {
+          module,
+          targets: [{ format: canvasTexture.format }],
+        },
+      });
+    }
+
+    if (!sampler) {
+      sampler = device.createSampler();
+    }
+
+    const encoder = device.createCommandEncoder();
+
+    const bindGroup = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: texture },
+      ],
+    });
+
+    const renderPassDescriptor: GPURenderPassDescriptor = {
+      label: 'Mipmap render pass',
+      colorAttachments: [
+        {
+          view: canvasTexture.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    };
+
+    const pass = encoder.beginRenderPass(renderPassDescriptor);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(6);
+    pass.end();
+
+    const commandBuffer = encoder.finish();
+    device.queue.submit([commandBuffer]);
+  }
+})();

@@ -1,8 +1,13 @@
 import Quat from "./quat";
 import Vec3 from "./vec3";
 
+const UP = new Vec3(0, 1, 0);
+
 const TEMP_MATRIX = new Float32Array(16);
 const TEMP_QUAT = new Quat();
+const X = new Vec3();
+const Y = new Vec3();
+const Z = new Vec3();
 
 export default class Mat4 {
   static identity(dst?: Float32Array) {
@@ -232,6 +237,23 @@ export default class Mat4 {
     return dst;
   }
 
+  static lookAt(cameraPosition: Vec3, target: Vec3, up = UP, dst?: Float32Array) {
+    dst = dst || new Float32Array(16);
+
+    const zAxis = Vec3.normalize(Vec3.subtract(cameraPosition, target, Z), Z);
+    const xAxis = Vec3.normalize(Vec3.cross(up, zAxis, X), X);
+    const yAxis = Vec3.cross(zAxis, xAxis, Y);
+
+    _fillFloat32Array(dst,
+      xAxis.x, xAxis.y, xAxis.z, 0,
+      yAxis.x, yAxis.y, yAxis.z, 0,
+      zAxis.x, zAxis.y, zAxis.z, 0,
+      cameraPosition.x, cameraPosition.y, cameraPosition.z, 1
+    );
+
+    return dst;
+  }
+
   static applyTranslation(x: number, y: number, z: number, dst: Float32Array) {
     dst[12] += dst[0] * x + dst[4] * y + dst[8]  * z;
     dst[13] += dst[1] * x + dst[5] * y + dst[9]  * z;
@@ -368,8 +390,8 @@ export default class Mat4 {
     _fillFloat32Array(dst,
       2 / (right - left), 0, 0, 0,
       0, 2 / (top - bottom), 0, 0,
-      0, 0, -2 / (far - near), 0,
-      -(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1
+      0, 0, -1 / (near - far), 0,
+      -(right + left) / (right - left), -(top + bottom) / (top - bottom), -far / (near - far), 1
     );
 
     return dst;

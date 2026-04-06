@@ -1,5 +1,7 @@
 import WGSL_LIT from "./assets/shaders/lit.wgsl?raw";
 import WGSL_LIT_SKINNED from "./assets/shaders/lit-skinned.wgsl?raw";
+import WGSL_SHADOW from "./assets/shaders/shadow.wgsl?raw";
+import WGSL_SHADOW_SKINNED from "./assets/shaders/shadow-skinned.wgsl?raw";
 
 import ObjectNode, { traverseChildren } from "./object-node";
 import Scene from "./scene";
@@ -48,123 +50,7 @@ export default class Renderer {
     this.emptySampler = _createEmptySampler(device);
     this.emptyTexture2D = _createEmptyTextures(device);
     this.layouts = _createLayouts(device);
-
-    const litModule = device.createShaderModule({
-      label: 'lit',
-      code: WGSL_LIT,
-    });
-
-    const litSkinnedModule = device.createShaderModule({
-      label: 'lit skinned',
-      code: WGSL_LIT_SKINNED,
-    });
-
-    this.pipelines["lit"] = device.createRenderPipeline({
-      label: 'lit',
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [
-          this.layouts.scene,
-          this.layouts.object,
-          this.layouts.material,
-        ]
-      }),
-      vertex: {
-        module: litModule,
-        buffers: [
-          {
-            arrayStride: 3 * 4,
-            attributes: [
-              {shaderLocation: 0, offset: 0, format: 'float32x3'},  // position
-            ],
-          },
-          {
-            arrayStride: 3 * 4,
-            attributes: [
-              {shaderLocation: 1, offset: 0, format: 'float32x3'},  // normal
-            ],
-          },
-          {
-            arrayStride: 2 * 4,
-            attributes: [
-              {shaderLocation: 2, offset: 0, format: 'float32x2'},  // uv
-            ],
-          },
-        ]
-      },
-      fragment: {
-        module: litModule,
-        targets: [{ format: presentationFormat }],
-      },
-      primitive: {
-        cullMode: 'back',
-      },
-      depthStencil: {
-        depthWriteEnabled: true,
-        depthCompare: 'less',
-        format: 'depth24plus',
-      },
-    });
-
-    this.pipelines["lit-skinned"] = device.createRenderPipeline({
-      label: 'lit skinned',
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [
-          this.layouts.scene,
-          this.layouts.object,
-          this.layouts.material,
-          this.layouts.skin,
-        ]
-      }),
-      vertex: {
-        module: litSkinnedModule,
-        buffers: [
-          {
-            arrayStride: 3 * 4,
-            attributes: [
-              {shaderLocation: 0, offset: 0, format: 'float32x3'},  // position
-            ],
-          },
-          {
-            arrayStride: 3 * 4,
-            attributes: [
-              {shaderLocation: 1, offset: 0, format: 'float32x3'},  // normal
-            ],
-          },
-          {
-            arrayStride: 2 * 4,
-            attributes: [
-              {shaderLocation: 2, offset: 0, format: 'float32x2'},  // uv
-            ],
-          },
-          {
-            arrayStride: 4 * 1,
-            attributes: [
-              // {shaderLocation: 3, offset: 0, format: 'float32x4'},  // joints
-              {shaderLocation: 3, offset: 0, format: 'uint8x4'},  // joints
-              // {shaderLocation: 3, offset: 0, format: 'uint32x4'},  // joints
-            ],
-          },
-          {
-            arrayStride: 4 * 4,
-            attributes: [
-              {shaderLocation: 4, offset: 0, format: 'float32x4'},  // weights
-            ],
-          },
-        ]
-      },
-      fragment: {
-        module: litModule,
-        targets: [{ format: presentationFormat }],
-      },
-      primitive: {
-        cullMode: 'back',
-      },
-      depthStencil: {
-        depthWriteEnabled: true,
-        depthCompare: 'less',
-        format: 'depth24plus',
-      },
-    });
+    this.pipelines = _createPipelines(device, this.layouts, presentationFormat);
 
     const observer = new ResizeObserver(entries => {
       for (const entry of entries) {
@@ -179,15 +65,15 @@ export default class Renderer {
   }
 
   render() {
-    const scene = this.activeScene;
-    if (!scene) {
-      return;
-    }
-    
     const context = this.context;
     const device = this.device;
     if (!device || !context) {
       throw new Error("Setup first");
+    }
+
+    const scene = this.activeScene;
+    if (!scene) {
+      return;
     }
 
     const canvasTexture = context.getCurrentTexture();
@@ -237,12 +123,15 @@ export default class Renderer {
     device.queue.writeBuffer(scene.uniform.buffer, 0, scene.uniform.array);
 
     const encoder = device.createCommandEncoder();
+
+    scene.shadowmap!.shadowPass(this, device, encoder, scene);
+
     const pass = encoder.beginRenderPass(renderPassDescriptor);
     pass.setBindGroup(0, scene.bindGroup);
 
-    const map = _getRenderablesPerPipeline(this, scene);
+    const map = _getRenderableNodes(this, scene);
     for (const [name, nodes] of Object.entries(map)) {
-      const pipeline = this.pipelines[name];
+      const pipeline = this.pipelines[name === "basic" ? "lit" : "lit-skinned"];
       pass.setPipeline(pipeline);
 
       for (const node of nodes) {
@@ -281,8 +170,7 @@ export default class Renderer {
           pass.setVertexBuffer(1, geometry.buffers.normal ?? geometry.buffers.NORMAL);
           pass.setVertexBuffer(2, geometry.buffers.uv ?? geometry.buffers.TEXCOORD_0);
           
-          if (name === "lit-skinned" && node.skin) {
-            node.skin.update(device, node);
+          if (name === "skinned" && node.skin) {
             pass.setVertexBuffer(3, geometry.buffers.JOINTS_0);
             pass.setVertexBuffer(4, geometry.buffers.WEIGHTS_0);
             pass.setBindGroup(3, node.skin.bindGroup);
@@ -297,6 +185,8 @@ export default class Renderer {
     
     const commandBuffer = encoder.finish();
     device.queue.submit([commandBuffer]);
+
+    // visualizeDepthTexture(device, this.shadowmap.depthTexture, canvasTexture);
   }
 
   addScene(scene: Scene) {
@@ -322,7 +212,11 @@ export default class Renderer {
       throw new Error("This browser supports webgpu but it appears disabled");
     }
 
-    const device = await adapter.requestDevice();
+    const limits: GPUDeviceDescriptor = {
+      requiredLimits: {},
+      requiredFeatures: [],
+    };
+    const device = await adapter.requestDevice(limits);
     device.lost.then((info) => {
       console.error(`WebGPU device was lost: ${info.message}`);
     }).catch(console.error);
@@ -347,14 +241,13 @@ export default class Renderer {
   }
 }
 
-function _getRenderablesPerPipeline(renderer: Renderer, scene: Scene) {
+export function _getRenderableNodes(renderer: Renderer, scene: Scene) {
   const device = renderer.device!;
 
-  const map: Record<keyof typeof renderer.pipelines, ObjectNode[]> = {};
-
-  for (const name of Object.keys(renderer.pipelines)) {
-    map[name] = [];
-  }
+  const nodes = {
+    basic: [] as ObjectNode[],
+    skinned: [] as ObjectNode[],
+  };
 
   for (const parent of scene.children) {
     const children = traverseChildren(parent);
@@ -364,13 +257,14 @@ function _getRenderablesPerPipeline(renderer: Renderer, scene: Scene) {
       }
 
       if (node.skin) {
-        map["lit-skinned"].push(node);
+        nodes.skinned.push(node);
         if (!node.skin.bindGroup) {
           node.skin.createUniformBuffer(renderer, device);
         }
+        node.skin.update(device, node);
       }
       else {
-        map["lit"].push(node);
+        nodes.basic.push(node);
       }
 
       if (!node.uniform) {
@@ -390,7 +284,7 @@ function _getRenderablesPerPipeline(renderer: Renderer, scene: Scene) {
     }
   }
 
-  return map;
+  return nodes;
 }
 
 function _createEmptySampler(device: GPUDevice) {
@@ -420,6 +314,31 @@ function _createLayouts(device: GPUDevice) {
 
   layouts.scene = device.createBindGroupLayout({
     label: "scene layout",
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: { type: "uniform" }
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.FRAGMENT,
+        sampler: {
+          type: "comparison"
+        },
+      },
+      {
+        binding: 2,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: {
+          sampleType: "depth"
+        },
+      },
+    ]
+  });
+
+  layouts.scene_shadow = device.createBindGroupLayout({
+    label: "scene shadow layout",
     entries: [
       {
         binding: 0,
@@ -482,4 +401,241 @@ function _createLayouts(device: GPUDevice) {
   });
 
   return layouts;
+}
+
+function _createPipelines(device: GPUDevice, layouts: Record<string, GPUBindGroupLayout>, presentationFormat: GPUTextureFormat) {
+  const pipelines: Record<string, GPURenderPipeline> = {};
+
+  const litModule = device.createShaderModule({
+    label: 'lit',
+    code: WGSL_LIT,
+  });
+
+  const litSkinnedModule = device.createShaderModule({
+    label: 'lit skinned',
+    code: WGSL_LIT_SKINNED,
+  });
+
+  const shadowModule = device.createShaderModule({
+    label: 'shadow',
+    code: WGSL_SHADOW,
+  });
+
+  const shadowSkinnedModule = device.createShaderModule({
+    label: 'shadow skinned',
+    code: WGSL_SHADOW_SKINNED,
+  });
+
+  pipelines["lit"] = device.createRenderPipeline({
+    label: 'lit',
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [
+        layouts.scene,
+        layouts.object,
+        layouts.material,
+        layouts.shadow,
+      ]
+    }),
+    vertex: {
+      module: litModule,
+      buffers: [
+        {
+          arrayStride: 3 * 4,
+          attributes: [
+            {shaderLocation: 0, offset: 0, format: 'float32x3'},  // position
+          ],
+        },
+        {
+          arrayStride: 3 * 4,
+          attributes: [
+            {shaderLocation: 1, offset: 0, format: 'float32x3'},  // normal
+          ],
+        },
+        {
+          arrayStride: 2 * 4,
+          attributes: [
+            {shaderLocation: 2, offset: 0, format: 'float32x2'},  // uv
+          ],
+        },
+      ]
+    },
+    fragment: {
+      module: litModule,
+      targets: [{ format: presentationFormat }],
+    },
+    primitive: {
+      cullMode: 'back',
+    },
+    depthStencil: {
+      depthWriteEnabled: true,
+      depthCompare: 'less',
+      format: 'depth24plus',
+    },
+  });
+
+  pipelines["lit-skinned"] = device.createRenderPipeline({
+    label: 'lit skinned',
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [
+        layouts.scene,
+        layouts.object,
+        layouts.material,
+        layouts.skin,
+      ]
+    }),
+    vertex: {
+      module: litSkinnedModule,
+      buffers: [
+        {
+          arrayStride: 3 * 4,
+          attributes: [
+            {shaderLocation: 0, offset: 0, format: 'float32x3'},  // position
+          ],
+        },
+        {
+          arrayStride: 3 * 4,
+          attributes: [
+            {shaderLocation: 1, offset: 0, format: 'float32x3'},  // normal
+          ],
+        },
+        {
+          arrayStride: 2 * 4,
+          attributes: [
+            {shaderLocation: 2, offset: 0, format: 'float32x2'},  // uv
+          ],
+        },
+        {
+          arrayStride: 4 * 1,
+          attributes: [
+            {shaderLocation: 3, offset: 0, format: 'uint8x4'},  // joints
+          ],
+        },
+        {
+          arrayStride: 4 * 4,
+          attributes: [
+            {shaderLocation: 4, offset: 0, format: 'float32x4'},  // weights
+          ],
+        },
+      ]
+    },
+    fragment: {
+      module: litModule,
+      targets: [{ format: presentationFormat }],
+    },
+    primitive: {
+      cullMode: 'back',
+    },
+    depthStencil: {
+      depthWriteEnabled: true,
+      depthCompare: 'less',
+      format: 'depth24plus',
+    },
+  });
+
+  pipelines["shadow"] = device.createRenderPipeline({
+    label: 'shadow',
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [
+        layouts.scene_shadow,
+        layouts.object,
+        layouts.material,
+      ]
+    }),
+    vertex: {
+      module: shadowModule,
+      buffers: [
+        {
+          arrayStride: 3 * 4,
+          attributes: [
+            {shaderLocation: 0, offset: 0, format: 'float32x3'},  // position
+          ],
+        },
+        {
+          arrayStride: 3 * 4,
+          attributes: [
+            {shaderLocation: 1, offset: 0, format: 'float32x3'},  // normal
+          ],
+        },
+        {
+          arrayStride: 2 * 4,
+          attributes: [
+            {shaderLocation: 2, offset: 0, format: 'float32x2'},  // uv
+          ],
+        },
+      ]
+    },
+    fragment: {
+      module: shadowModule,
+      targets: [],
+    },
+    primitive: {
+      cullMode: 'back',
+    },
+    depthStencil: {
+      depthWriteEnabled: true,
+      depthCompare: 'less',
+      format: 'depth24plus',
+    },
+  });
+
+  pipelines["shadow-skinned"] = device.createRenderPipeline({
+    label: 'shadow skinned',
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [
+        layouts.scene_shadow,
+        layouts.object,
+        layouts.material,
+        layouts.skin
+      ]
+    }),
+    vertex: {
+      module: shadowSkinnedModule,
+      buffers: [
+        {
+          arrayStride: 3 * 4,
+          attributes: [
+            {shaderLocation: 0, offset: 0, format: 'float32x3'},  // position
+          ],
+        },
+        {
+          arrayStride: 3 * 4,
+          attributes: [
+            {shaderLocation: 1, offset: 0, format: 'float32x3'},  // normal
+          ],
+        },
+        {
+          arrayStride: 2 * 4,
+          attributes: [
+            {shaderLocation: 2, offset: 0, format: 'float32x2'},  // uv
+          ],
+        },
+        {
+          arrayStride: 4 * 1,
+          attributes: [
+            {shaderLocation: 3, offset: 0, format: 'uint8x4'},  // joints
+          ],
+        },
+        {
+          arrayStride: 4 * 4,
+          attributes: [
+            {shaderLocation: 4, offset: 0, format: 'float32x4'},  // weights
+          ],
+        },
+      ]
+    },
+    fragment: {
+      module: shadowSkinnedModule,
+      targets: [],
+    },
+    primitive: {
+      cullMode: 'back',
+    },
+    depthStencil: {
+      depthWriteEnabled: true,
+      depthCompare: 'less',
+      format: 'depth24plus',
+    },
+  });
+
+  return pipelines;
 }
