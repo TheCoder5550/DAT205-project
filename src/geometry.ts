@@ -1,16 +1,4 @@
-type TypedArray<T extends ArrayBufferLike = ArrayBufferLike> =
-  Int8Array<T> |
-  Uint8Array<T> |
-  Uint8ClampedArray<T> |
-  Int16Array<T> |
-  Uint16Array<T> |
-  Int32Array<T> |
-  Uint32Array<T> |
-  Float16Array<T> |
-  Float32Array<T> |
-  Float64Array<T> |
-  BigInt64Array<T> |
-  BigUint64Array<T>;
+import type { TypedArray } from "./utils";
 
 export type Attributes = Record<string, Attribute>;
 

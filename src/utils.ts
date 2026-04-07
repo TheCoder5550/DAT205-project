@@ -1,3 +1,22 @@
+import type ObjectNode from "./object-node";
+import { traverseChildren } from "./object-node";
+import type Renderer from "./renderer";
+import type Scene from "./scene";
+
+export type TypedArray<T extends ArrayBufferLike = ArrayBufferLike> =
+  Int8Array<T> |
+  Uint8Array<T> |
+  Uint8ClampedArray<T> |
+  Int16Array<T> |
+  Uint16Array<T> |
+  Int32Array<T> |
+  Uint32Array<T> |
+  Float16Array<T> |
+  Float32Array<T> |
+  Float64Array<T> |
+  BigInt64Array<T> |
+  BigUint64Array<T>;
+
 export function degToRad(deg: number): number {
   return deg * Math.PI / 180;
 }
@@ -356,3 +375,49 @@ export const visualizeDepthTexture = (() => {
     device.queue.submit([commandBuffer]);
   }
 })();
+
+export function _getRenderableNodes(renderer: Renderer, scene: Scene) {
+  const device = renderer.device!;
+
+  const nodes = {
+    basic: [] as ObjectNode[],
+    skinned: [] as ObjectNode[],
+  };
+
+  for (const parent of scene.children) {
+    const children = traverseChildren(parent);
+    for (const node of children) {
+      if (!node.meshRenderer) {
+        continue;
+      }
+
+      if (node.skin) {
+        nodes.skinned.push(node);
+        if (!node.skin.bindGroup) {
+          node.skin.createUniformBuffer(renderer, device);
+        }
+        node.skin.update(device, node);
+      }
+      else {
+        nodes.basic.push(node);
+      }
+
+      if (!node.uniform) {
+        node.createUniformBuffer(renderer, device);
+      }
+      for (let i = 0; i < node.meshRenderer.nrPrimitives; i++) {
+        const material = node.meshRenderer.materials[i];
+        const geometry = node.meshRenderer.geometries[i];
+
+        if (!material.uniform) {
+          material.createUniformBuffer(renderer, device);
+        }
+        if (!geometry.buffers) {
+          geometry.createBuffers(device);
+        }
+      }
+    }
+  }
+
+  return nodes;
+}

@@ -1,43 +1,88 @@
 import OrthographicCamera from "./camera/orthographic-camera";
+import type DirectionalLight from "./light/directional-light";
 import Mat4 from "./math/mat4";
 import Vec3 from "./math/vec3";
+import type ObjectNode from "./object-node";
 import type Renderer from "./renderer";
-import { _getRenderableNodes } from "./renderer";
 import type Scene from "./scene";
+import { _getRenderableNodes } from "./utils";
 
-export default class Shadowmap {
-  uniform;
-  camera;
-  depthTexture;
-  shadowMatrix = Mat4.identity();
+type Renderables = {
+  basic: ObjectNode[];
+  skinned: ObjectNode[];
+};
+
+interface ShadowmapRendererOptions {
+  resolution?: number;
+  pcf?: boolean;
+}
+
+export default class ShadowmapRenderer {
+  renderer;
+  device;
   sampler;
+  texture;
+  shadowmaps;
   
-  private renderPassDescriptor: GPURenderPassDescriptor;
-  private bindGroup;
+  constructor(renderer: Renderer, device: GPUDevice, options?: ShadowmapRendererOptions) {
+    const textureSize = options?.resolution ?? 1024;
+    const enablePCF = options?.pcf ?? true;
 
-  constructor(renderer: Renderer, device: GPUDevice) {
-    const area = 15;
-    const textureSize = 1024;
-    const enablePCF = true;
+    this.renderer = renderer;
+    this.device = device;
 
     const desc: GPUTextureDescriptor = {
-      size: [textureSize, textureSize],
+      size: [textureSize, textureSize, 4],
+      dimension: "2d",
       format: 'depth24plus',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
     };
-    this.depthTexture = device.createTexture(desc);
-    const depthTextureView = this.depthTexture.createView();
+    this.texture = device.createTexture(desc);
 
-    this.renderPassDescriptor = {
-      label: 'shadow renderpass',
-      colorAttachments: [],
-      depthStencilAttachment: {
-        view: depthTextureView,
-        depthClearValue: 1.0,
-        depthLoadOp: 'clear',
-        depthStoreOp: 'store',
-      },
-    };
+    this.sampler = device.createSampler({
+      compare: 'less',
+      ...(enablePCF && {
+        minFilter: "linear",
+        magFilter: "linear",
+      }),
+    });
+
+    this.shadowmaps = [];
+    for (let i = 0; i < 4; i++) {
+      const textureView = this.texture.createView({
+        dimension: "2d-array",
+        baseArrayLayer: i,
+        arrayLayerCount: 1
+      });
+      this.shadowmaps.push(new Shadowmap(renderer, device, textureView));
+    }
+  }
+
+  shadowPass(encoder: GPUCommandEncoder, scene: Scene) {
+    const renderables = _getRenderableNodes(this.renderer, scene);
+
+    for (let i = 0; i < this.shadowmaps.length; i++) {
+      const shadowmap = this.shadowmaps[i];
+      const light = scene.lights[i];
+      if (!light) {
+        continue;
+      }
+
+      shadowmap.shadowPass(this.renderer, this.device, encoder, renderables, light);
+    }
+  }
+}
+
+class Shadowmap {
+  camera;
+  shadowMatrix = Mat4.identity();
+  
+  private renderPassDescriptor: GPURenderPassDescriptor;
+  private uniform;
+  private bindGroup;
+
+  constructor(renderer: Renderer, device: GPUDevice, textureView: GPUTextureView) {
+    const area = 15;
 
     const size = (16 + 16 + 16 + 4) * 4;
     const buffer = device.createBuffer({
@@ -59,9 +104,9 @@ export default class Shadowmap {
       buffer: buffer,
       array: array,
       views: views
-    }
+    };
 
-    this.bindGroup = device.createBindGroup({
+    this.bindGroup =  device.createBindGroup({
       label: `shadowmap (generate)`,
       layout: renderer.layouts.scene_shadow,
       entries: [
@@ -69,39 +114,43 @@ export default class Shadowmap {
       ],
     });
 
-    this.sampler = device.createSampler({
-      compare: 'less',
-      ...(enablePCF && {
-        minFilter: "linear",
-        magFilter: "linear",
-      }),
-    });
-
     this.camera = new OrthographicCamera({ size: area, near: 0.1, far: 100 });
+
+    this.renderPassDescriptor = {
+      label: 'shadow renderpass',
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: textureView,
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    };
   }
 
-  updateMatrices(sunDirection: Vec3) {
+  shadowPass(renderer: Renderer, device: GPUDevice, encoder: GPUCommandEncoder, renderables: Renderables, light: DirectionalLight) {
+    const uniform = this.uniform;
+    const bindGroup = this.bindGroup;
+    const shadowMatrix = this.shadowMatrix;
+
     const mat = Mat4.identity();
-    Mat4.lookAt(Vec3.zero(), sunDirection, new Vec3(0, 1, 0), mat);
+    Mat4.lookAt(Vec3.zero(), light.direction, new Vec3(0, 1, 0), mat);
     Mat4.applyTranslation(0, 0, 50, mat);
     this.camera.transform.setMatrix(mat);
 
-    Mat4.identity(this.shadowMatrix);
-    Mat4.multiply(this.shadowMatrix, this.camera.projectionMatrix, this.shadowMatrix);
-    Mat4.multiply(this.shadowMatrix, this.camera.viewMatrix.getValue(), this.shadowMatrix);
-  }
+    Mat4.identity(shadowMatrix);
+    Mat4.multiply(shadowMatrix, this.camera.projectionMatrix, shadowMatrix);
+    Mat4.multiply(shadowMatrix, this.camera.viewMatrix.getValue(), shadowMatrix);
 
-  shadowPass(renderer: Renderer, device: GPUDevice, encoder: GPUCommandEncoder, scene: Scene) {
-    Mat4.copy(this.camera.projectionMatrix, this.uniform.views.projectionMatrix);
-    Mat4.copy(this.camera.viewMatrix.getValue(), this.uniform.views.viewMatrix);
-    Mat4.copy(this.camera.transform.matrix, this.uniform.views.cameraMatrix);
+    Mat4.copy(this.camera.projectionMatrix, uniform.views.projectionMatrix);
+    Mat4.copy(this.camera.viewMatrix.getValue(), uniform.views.viewMatrix);
+    Mat4.copy(this.camera.transform.matrix, uniform.views.cameraMatrix);
 
-    device.queue.writeBuffer(this.uniform.buffer, 0, this.uniform.array);
+    device.queue.writeBuffer(uniform.buffer, 0, uniform.array);
 
     const pass = encoder.beginRenderPass(this.renderPassDescriptor);
-    pass.setBindGroup(0, this.bindGroup);
+    pass.setBindGroup(0, bindGroup);
 
-    const renderables = _getRenderableNodes(renderer, scene);
     for (const [name, nodes] of Object.entries(renderables)) {
       const pipeline = renderer.pipelines[name === "basic" ? "shadow" : "shadow-skinned"];
       pass.setPipeline(pipeline);

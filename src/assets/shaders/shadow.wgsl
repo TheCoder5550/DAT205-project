@@ -39,6 +39,6 @@ struct VSOutput {
   return vsOutput;
 }
 
-@fragment fn fs(vsOutput: VSOutput) -> @location(0) vec4f {
-  return vec4f(1, 0, 1, 1);
-}
+// @fragment fn fs(vsOutput: VSOutput) -> @location(0) vec4f {
+//   return vec4f(1, 0, 1, 1);
+// }

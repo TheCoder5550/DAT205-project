@@ -19,29 +19,19 @@ struct UniformsObject {
   normalMatrix: mat3x3f,
 }
 
-struct UniformsMaterial {
-  albedo: vec4f,
-  shininess: f32,
-}
-
 struct VSOutput {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) surfaceToView: vec3f,
   @location(2) uv: vec2f,
-  @location(3) shadowPos: vec3f,
+  @location(3) shadowPos_0: vec3f,
+  @location(4) shadowPos_1: vec3f,
+  @location(5) shadowPos_2: vec3f,
+  @location(6) shadowPos_3: vec3f,
 };
 
 @group(0) @binding(0) var<uniform> uniformsScene: UniformsScene;
-@group(0) @binding(1) var shadowSampler: sampler_comparison;
-@group(0) @binding(2) var shadowMap: texture_depth_2d;
-
 @group(1) @binding(0) var<uniform> uniformsObject: UniformsObject;
-
-@group(2) @binding(0) var<uniform> uniformsMaterial: UniformsMaterial;
-@group(2) @binding(1) var albedoSampler: sampler;
-@group(2) @binding(2) var albedoTexture: texture_2d<f32>;
-
 @group(3) @binding(0) var<storage, read> joint_matrices: array<mat4x4f>;
 @group(3) @binding(1) var<storage, read> inverse_bind_matrices: array<mat4x4f>;
 
@@ -72,26 +62,4 @@ struct VSOutput {
   vsOutput.surfaceToView = viewWorldPosition - surfaceWorldPosition;
   vsOutput.uv = vertex.uv;
   return vsOutput;
-}
-
-@fragment fn fs(vsOutput: VSOutput) -> @location(0) vec4f {
-  let uv = vsOutput.uv;
-  let normal = normalize(vsOutput.normal);
-  let sun = normalize(uniformsScene.sunDirection);
-
-  let surfaceToViewDirection = normalize(vsOutput.surfaceToView);
-  let halfVector = normalize(sun + surfaceToViewDirection);
-
-  let diffuse = saturate(dot(normal, sun));
-  let specular = pow(saturate(dot(normal, halfVector)), max(1, uniformsMaterial.shininess)) * saturate(uniformsMaterial.shininess / 10);
-  let albedo = textureSample(albedoTexture, albedoSampler, uv) * uniformsMaterial.albedo;
-  var color = albedo.rgb * diffuse + specular * saturate(diffuse * 10);
-
-  let visibility = textureSampleCompare(
-    shadowMap, shadowSampler,
-    vsOutput.shadowPos.xy, vsOutput.shadowPos.z - 0.002
-  );
-  color *= 0.2 + visibility * 0.8;
-
-  return vec4f(color, albedo.a);
 }

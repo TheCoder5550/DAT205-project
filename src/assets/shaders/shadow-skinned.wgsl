@@ -20,6 +20,7 @@ struct UniformsObject {
 
 struct VSOutput {
   @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
 };
 
 @group(0) @binding(0) var<uniform> uniformsScene: UniformsScene;
@@ -44,8 +45,4 @@ struct VSOutput {
   var vsOutput: VSOutput;
   vsOutput.position = uniformsScene.projectionMatrix * uniformsScene.viewMatrix * uniformsObject.worldMatrix * skin_matrix * vertex.position;
   return vsOutput;
-}
-
-@fragment fn fs(vsOutput: VSOutput) -> @location(0) vec4f {
-  return vec4f(1, 0, 1, 1);
 }

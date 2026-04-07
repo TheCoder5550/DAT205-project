@@ -3,7 +3,6 @@ import WGSL_LIT_SKINNED from "./assets/shaders/lit-skinned.wgsl?raw";
 import WGSL_SHADOW from "./assets/shaders/shadow.wgsl?raw";
 import WGSL_SHADOW_SKINNED from "./assets/shaders/shadow-skinned.wgsl?raw";
 
-import ObjectNode, { traverseChildren } from "./object-node";
 import Scene from "./scene";
 
 interface RendererOptions {
@@ -38,8 +37,8 @@ export default class Renderer {
 
   async initialize() {
     const canvas = this.options.canvas;
-    const { device } = await this.#_getGPU();
-    const { context } = this.#_getContext(canvas);
+    const { device } = await this._getGPU();
+    const { context } = this._getContext(canvas);
 
     const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
     context.configure({
@@ -68,16 +67,39 @@ export default class Renderer {
     const context = this.context;
     const device = this.device;
     if (!device || !context) {
-      throw new Error("Setup first");
+      throw new Error("Await renderer.initialize() first");
     }
 
     const scene = this.activeScene;
     if (!scene) {
       return;
     }
+    
+    const encoder = device.createCommandEncoder();
+    const { renderPassDescriptor } = this._getRenderPassDescriptor(device, context);
 
+    scene.render(this, device, encoder, renderPassDescriptor);
+    
+    const commandBuffer = encoder.finish();
+    device.queue.submit([commandBuffer]);
+  }
+
+  addScene(scene: Scene) {
+    if (scene.renderer !== null) {
+      throw new Error("Scene has already been added to a renderer");
+    }
+
+    if (this.scenes.length === 0 || !this.activeScene) {
+      this.activeScene = scene;
+    }
+    
+    this.scenes.push(scene);
+    scene.renderer = this;
+  }
+
+  private _getRenderPassDescriptor(device: GPUDevice, context: GPUCanvasContext) {
     const canvasTexture = context.getCurrentTexture();
-
+    
     // If we don't have a depth texture OR if its size is different
     // from the canvasTexture when make a new depth texture
     if (
@@ -96,7 +118,7 @@ export default class Renderer {
     }
 
     const renderPassDescriptor: GPURenderPassDescriptor = {
-      label: 'our basic canvas renderPass',
+      label: 'main render pass',
       colorAttachments: [
         {
           view: canvasTexture.createView(),
@@ -113,96 +135,14 @@ export default class Renderer {
       },
     };
 
-    if (!scene.uniform) {
-      scene.createUniformBuffer(this, device);
-    }
-    if (!scene.uniform) {
-      throw new Error("Could not create scene uniform");
-    }
-    scene.setUniforms();
-    device.queue.writeBuffer(scene.uniform.buffer, 0, scene.uniform.array);
-
-    const encoder = device.createCommandEncoder();
-
-    scene.shadowmap!.shadowPass(this, device, encoder, scene);
-
-    const pass = encoder.beginRenderPass(renderPassDescriptor);
-    pass.setBindGroup(0, scene.bindGroup);
-
-    const map = _getRenderableNodes(this, scene);
-    for (const [name, nodes] of Object.entries(map)) {
-      const pipeline = this.pipelines[name === "basic" ? "lit" : "lit-skinned"];
-      pass.setPipeline(pipeline);
-
-      for (const node of nodes) {
-        if (!node.meshRenderer) {
-          continue;
-        }
-        if (!node.uniform) {
-          throw new Error("");
-        }
-
-        node.setUniforms();
-        device.queue.writeBuffer(node.uniform.buffer, 0, node.uniform.array);
-        pass.setBindGroup(1, node.bindGroup);
-
-        for (let i = 0; i < node.meshRenderer.nrPrimitives; i++) {
-          const material = node.meshRenderer.materials[i];
-          const geometry = node.meshRenderer.geometries[i];
-
-          if (!material.uniform) {
-            throw new Error("Material uniform not created");
-          }
-          if (!geometry.buffers) {
-            throw new Error("No geometry buffers");
-          }
-
-          material.setUniforms();
-          device.queue.writeBuffer(material.uniform.buffer, 0, material.uniform.array);
-          pass.setBindGroup(2, material.bindGroup);
-
-          const indexFormat = geometry.attributes.indices.format;
-          if (!indexFormat) {
-            throw new Error("Index format must be defined");
-          }
-          pass.setIndexBuffer(geometry.buffers.indices, indexFormat);
-          pass.setVertexBuffer(0, geometry.buffers.position ?? geometry.buffers.POSITION);
-          pass.setVertexBuffer(1, geometry.buffers.normal ?? geometry.buffers.NORMAL);
-          pass.setVertexBuffer(2, geometry.buffers.uv ?? geometry.buffers.TEXCOORD_0);
-          
-          if (name === "skinned" && node.skin) {
-            pass.setVertexBuffer(3, geometry.buffers.JOINTS_0);
-            pass.setVertexBuffer(4, geometry.buffers.WEIGHTS_0);
-            pass.setBindGroup(3, node.skin.bindGroup);
-          }
-
-          pass.drawIndexed(geometry.numVertices);
-        }
-      }
-    }
-
-    pass.end();
-    
-    const commandBuffer = encoder.finish();
-    device.queue.submit([commandBuffer]);
-
-    // visualizeDepthTexture(device, this.shadowmap.depthTexture, canvasTexture);
+    return {
+      renderPassDescriptor,
+      canvasTexture,
+      depthTexture: this.depthTexture,
+    };
   }
 
-  addScene(scene: Scene) {
-    if (scene.renderer !== null) {
-      throw new Error("Scene has already been added to a renderer");
-    }
-
-    if (this.scenes.length === 0 || !this.activeScene) {
-      this.activeScene = scene;
-    }
-    
-    this.scenes.push(scene);
-    scene.renderer = this;
-  }
-
-  async #_getGPU() {
+  private async _getGPU() {
     if (!navigator.gpu) {
       throw new Error("WebGPU not supported");
     }
@@ -228,7 +168,7 @@ export default class Renderer {
     }
   }
 
-  #_getContext(canvas: HTMLCanvasElement) {
+  private _getContext(canvas: HTMLCanvasElement) {
     const context = canvas.getContext('webgpu');
     if (!context) {
       throw new Error("Could not get 'webgpu' canvas context");
@@ -239,52 +179,6 @@ export default class Renderer {
       context
     }
   }
-}
-
-export function _getRenderableNodes(renderer: Renderer, scene: Scene) {
-  const device = renderer.device!;
-
-  const nodes = {
-    basic: [] as ObjectNode[],
-    skinned: [] as ObjectNode[],
-  };
-
-  for (const parent of scene.children) {
-    const children = traverseChildren(parent);
-    for (const node of children) {
-      if (!node.meshRenderer) {
-        continue;
-      }
-
-      if (node.skin) {
-        nodes.skinned.push(node);
-        if (!node.skin.bindGroup) {
-          node.skin.createUniformBuffer(renderer, device);
-        }
-        node.skin.update(device, node);
-      }
-      else {
-        nodes.basic.push(node);
-      }
-
-      if (!node.uniform) {
-        node.createUniformBuffer(renderer, device);
-      }
-      for (let i = 0; i < node.meshRenderer.nrPrimitives; i++) {
-        const material = node.meshRenderer.materials[i];
-        const geometry = node.meshRenderer.geometries[i];
-
-        if (!material.uniform) {
-          material.createUniformBuffer(renderer, device);
-        }
-        if (!geometry.buffers) {
-          geometry.createBuffers(device);
-        }
-      }
-    }
-  }
-
-  return nodes;
 }
 
 function _createEmptySampler(device: GPUDevice) {
@@ -331,6 +225,7 @@ function _createLayouts(device: GPUDevice) {
         binding: 2,
         visibility: GPUShaderStage.FRAGMENT,
         texture: {
+          viewDimension: "2d-array",
           sampleType: "depth"
         },
       },
@@ -564,10 +459,10 @@ function _createPipelines(device: GPUDevice, layouts: Record<string, GPUBindGrou
         },
       ]
     },
-    fragment: {
-      module: shadowModule,
-      targets: [],
-    },
+    // fragment: {
+    //   module: shadowModule,
+    //   targets: [],
+    // },
     primitive: {
       cullMode: 'back',
     },
@@ -623,10 +518,10 @@ function _createPipelines(device: GPUDevice, layouts: Record<string, GPUBindGrou
         },
       ]
     },
-    fragment: {
-      module: shadowSkinnedModule,
-      targets: [],
-    },
+    // fragment: {
+    //   module: shadowModule,
+    //   targets: [],
+    // },
     primitive: {
       cullMode: 'back',
     },
